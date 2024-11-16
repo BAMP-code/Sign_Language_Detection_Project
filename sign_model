@@ -1,0 +1,53 @@
+from tensorflow.keras.applications import ResNet50
+from tensorflow.keras.applications.resnet50 import preprocess_input
+from tensorflow.keras.layers import Dense, Dropout, GlobalAveragePooling2D
+from tensorflow.keras.models import Model
+from tensorflow.keras.optimizers import Adam
+from tensorflow.keras.utils import to_categorical
+from prepare_data import extract_frames
+import numpy as np
+from sklearn.model_selection import train_test_split
+
+# Load and customize the pre-trained ResNet-50 model.
+def load_model(num_classes):
+        base_model = ResNet50(weights='imagenet', include_top=False, input_shape=(224,224,3))
+        for layer in base_model.layers[:40]:
+                layer.trainable = False
+        # Custom layer
+        x = base_model.output
+        # Reduces spacial dimensions
+        x = GlobalAveragePooling2D()(x)
+        # Fully connected layer
+        x = Dense(512, activation='relu')(x)
+        predictions = Dense(num_classes, activation='softmax')(x)
+
+        model = Model(inputs=base_model.input, outputs=predictions)
+        return model
+
+# Trains the model
+def train_model(model, x_train, y_train, x_dev, y_dev, x_test, y_test):
+        # Fits models using the frame data
+        history = model.fit(x_train, y_train, validation_data=(x_dev, y_dev), epochs=10, batch_size=32)
+        test_loss, test_accuracy = model.evaluate(x_test, y_test)
+        print(f"Test Accuracy: {test_accuracy * 100:.2f}%")
+        model.save('landmark_classifier_model.h5')
+
+data_path = '/root/data-set/'
+csv_path = '/root/traincsv/train.csv'
+frames, labels = extract_frames(data_path, csv_path)
+frames = preprocess_input(np.array(frames))
+print(frames)
+# Gets unique labels in the dataset
+unique_labels = list(set(labels))
+#Creates a mapping from signs to index.
+label_to_index = {label: idx for idx, label in enumerate(unique_labels)}
+y = np.array([label_to_index[label] for label in labels])
+#One-hot
+y = to_categorical(y, num_classes=len(unique_labels))
+
+x_temp, x_test, y_temp, y_test = train_test_split(frames, y, test_size=0.1, random_state=42)
+x_train, x_dev, y_train, y_dev = train_test_split(x_temp, y_temp, test_size=0.1, random_state=42)
+
+model = load_model(len(unique_labels))
+model.compile(optimizer=Adam(learning_rate=1e-4), loss='categorical_crossentropy', metrics=['accuracy'])
+train_model(model, x_train, y_train, x_dev, y_dev, x_test, y_test)
