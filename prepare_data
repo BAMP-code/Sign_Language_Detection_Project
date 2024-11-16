@@ -1,0 +1,53 @@
+import os
+import cv2
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+
+# Takes the given landmarks and maps them into an image, marking each landmark with red circle.
+# Prepares the data for model input.
+def landmarks_to_image(df, img_size=(224, 224)):
+        df_copy = df.copy()
+        df_copy = df_copy.dropna(subset=['x', 'y'])
+        # Creates blank image
+        img = np.zeros((img_size[0], img_size[1], 3), dtype=np.float32)
+        x_min, x_max = df_copy['x'].min(), df_copy['x'].max()
+        y_min, y_max = df_copy['y'].min(), df_copy['y'].max()
+
+        # Normalize the Coordinates
+        df_copy['x'] = ((df_copy['x'] - x_min) / (x_max - x_min)) * (img_size[1] - 1)
+        df_copy['y'] = ((df_copy['y'] - y_min) / (y_max - y_min)) * (img_size[0] - 1)
+
+        for i in range(len(df_copy)):
+                x, y = int(df_copy.iloc[i]['x']), int(df_copy.iloc[i]['y'])
+                cv2.circle(img, (x,y), 2, (1.0, 0.0, 0.0), -1)
+
+        return img
+
+# Extracts visual representations from the .parquet files.
+# Returnts the important frames and all the labels.
+def extract_frames(data_path, csv_path):
+        frames = []
+        labels = []
+        train_csv = pd.read_csv(csv_path)
+        for root, dirs, files in os.walk(data_path):
+                for file in files:
+                        # Files represents landmark data from gestures(hands and face)
+                        if file.endswith('.parquet'):
+                                folder_path = os.path.join(root, file)
+                                file_id = file.split('.')[0]
+                                file_data = pd.read_parquet(folder_path)
+
+                                img = landmarks_to_image(file_data)
+                                plt.imshow(img)
+                                plt.show()
+                                frames.append(img)
+
+                                file_sign = train_csv[train_csv['path'].str.contains(file_id)]['sign'].values[0]
+                                labels.append(file_sign)
+        return frames, labels
+
+
+data_path = '/root/data-set/'
+csv_path = '/root/traincsv/train.csv'
+frames, labels = extract_frames(data_path, csv_path)
